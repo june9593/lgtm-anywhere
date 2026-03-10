@@ -14,11 +14,19 @@ const isMac =
 
 interface ChatInputProps {
   onSend: (text: string, model?: string) => void;
+  onStop?: () => void;
   disabled: boolean;
+  isStreaming?: boolean;
   placeholder?: string;
 }
 
-export function ChatInput({ onSend, disabled, placeholder }: ChatInputProps) {
+export function ChatInput({
+  onSend,
+  onStop,
+  disabled,
+  isStreaming,
+  placeholder,
+}: ChatInputProps) {
   const [text, setText] = useState("");
   const [model, setModel] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -34,6 +42,10 @@ export function ChatInput({ onSend, disabled, placeholder }: ChatInputProps) {
       textareaRef.current.style.height = "auto";
       textareaRef.current.style.overflowY = "hidden";
     }
+  };
+
+  const handleStop = () => {
+    onStop?.();
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -83,14 +95,24 @@ export function ChatInput({ onSend, disabled, placeholder }: ChatInputProps) {
         disabled={disabled}
         rows={1}
       />
-      <button
-        className="chat-input-send"
-        onClick={handleSend}
-        disabled={disabled || !text.trim()}
-        title={`Send (${isMac ? "⌘" : "Ctrl"}+Enter)`}
-      >
-        <kbd className="chat-input-send-shortcut">{shortcutLabel}</kbd>
-      </button>
+      {isStreaming ? (
+        <button
+          className="chat-input-stop"
+          onClick={handleStop}
+          title="Stop generation"
+        >
+          ⏹
+        </button>
+      ) : (
+        <button
+          className="chat-input-send"
+          onClick={handleSend}
+          disabled={disabled || !text.trim()}
+          title={`Send (${isMac ? "⌘" : "Ctrl"}+Enter)`}
+        >
+          <kbd className="chat-input-send-shortcut">{shortcutLabel}</kbd>
+        </button>
+      )}
     </div>
   );
 }

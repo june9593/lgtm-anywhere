@@ -43,7 +43,8 @@ export type WSServerMessage =
   | WSAskUserQuestionMessage
   | WSHistoryBatchStart
   | WSHistoryBatchEnd
-  | WSTodoUpdateMessage;
+  | WSTodoUpdateMessage
+  | WSInterruptedMessage;
 
 export interface WSInitMessage {
   event: "init";
@@ -141,6 +142,14 @@ export interface WSHistoryBatchEnd {
 export interface WSTodoUpdateMessage {
   event: "todo_update";
   data: { todos: import("./todo.js").TodoItem[] };
+}
+
+export interface WSInterruptedMessage {
+  event: "interrupted";
+  data: {
+    sessionId: string;
+    message: string;
+  };
 }
 
 // ── Global sync WebSocket: Server → Client ──

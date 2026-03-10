@@ -53,3 +53,29 @@ export function deleteSession(
     method: "DELETE",
   });
 }
+
+export function interruptSession(
+  sessionId: string,
+): Promise<{ sessionId: string; interrupted: boolean }> {
+  return fetchJSON<{ sessionId: string; interrupted: boolean }>(
+    `/api/sessions/${sessionId}/interrupt`,
+    {
+      method: "POST",
+    },
+  );
+}
+
+export function sendMessageToSession(
+  sessionId: string,
+  message: string,
+  cwd: string,
+): Promise<{ sessionId: string }> {
+  return fetchJSON<{ sessionId: string }>(
+    `/api/sessions/${sessionId}/messages?cwd=${encodeURIComponent(cwd)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message }),
+    },
+  );
+}

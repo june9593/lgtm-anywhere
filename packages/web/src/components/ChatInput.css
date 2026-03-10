@@ -130,3 +130,26 @@
   background: #bdbdbd;
   cursor: default;
 }
+
+.chat-input-stop {
+  /* Match send button dimensions */
+  box-sizing: border-box;
+  height: 43px;
+  width: 43px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: #dc2626;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s;
+  flex-shrink: 0;
+  font-size: 18px;
+}
+
+.chat-input-stop:hover {
+  background: #b91c1c;
+}

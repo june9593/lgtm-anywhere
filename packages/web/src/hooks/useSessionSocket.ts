@@ -4,6 +4,7 @@ import type {
   AskUserQuestionItem,
   TodoItem,
 } from "@lgtm-anywhere/shared";
+import { sendMessageToSession } from "../api";
 
 // A single content block in an assistant turn
 export type ContentBlock =
@@ -24,6 +25,12 @@ export interface PendingQuestion {
   questions: AskUserQuestionItem[];
 }
 
+export interface SessionUsage {
+  totalCostUsd: number;
+  durationMs: number;
+  numTurns: number;
+}
+
 interface UseSessionSocketReturn {
   messages: ChatMessage[];
   isStreaming: boolean;
@@ -31,6 +38,7 @@ interface UseSessionSocketReturn {
   error: string | null;
   pendingQuestion: PendingQuestion | null;
   todos: TodoItem[];
+  usage: SessionUsage | null;
   sendMessage: (text: string) => void;
   answerQuestion: (requestId: string, answers: Record<string, string>) => void;
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
@@ -38,6 +46,7 @@ interface UseSessionSocketReturn {
 
 export function useSessionSocket(
   sessionId: string | null,
+  cwd?: string,
 ): UseSessionSocketReturn {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -46,9 +55,11 @@ export function useSessionSocket(
   const [pendingQuestion, setPendingQuestion] =
     useState<PendingQuestion | null>(null);
   const [todos, setTodos] = useState<TodoItem[]>([]);
+  const [usage, setUsage] = useState<SessionUsage | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const streamBufRef = useRef<{ id: string; text: string } | null>(null);
   const isLoadingHistoryRef = useRef(false);
+  const [reconnectTrigger, setReconnectTrigger] = useState(0);
 
   // Reset state when sessionId changes (render-phase reset to avoid cascading renders)
   const [prevSessionId, setPrevSessionId] = useState(sessionId);
@@ -59,6 +70,7 @@ export function useSessionSocket(
     setMessages([]);
     setIsStreaming(false);
     setError(null);
+    setUsage(null);
   }
 
   useEffect(() => {
@@ -187,6 +199,23 @@ export function useSessionSocket(
           setIsStreaming(false);
           streamBufRef.current = null;
           setPendingQuestion(null);
+          // Capture usage data from result
+          const resultData = msg.data as {
+            total_cost_usd?: number;
+            duration_ms?: number;
+            num_turns?: number;
+          };
+          if (
+            resultData.total_cost_usd !== undefined ||
+            resultData.duration_ms !== undefined ||
+            resultData.num_turns !== undefined
+          ) {
+            setUsage({
+              totalCostUsd: resultData.total_cost_usd ?? 0,
+              durationMs: resultData.duration_ms ?? 0,
+              numTurns: resultData.num_turns ?? 0,
+            });
+          }
           break;
         }
 
@@ -199,9 +228,17 @@ export function useSessionSocket(
         }
 
         case "error": {
-          setError(msg.data.error);
-          setIsStreaming(false);
-          streamBufRef.current = null;
+          const errorData = msg.data as { error: string; code?: string };
+          // SESSION_STOPPED is not a real error - session can be resumed
+          if (errorData.code === "SESSION_STOPPED") {
+            setIsStreaming(false);
+            streamBufRef.current = null;
+            // Don't set error - session can continue
+          } else {
+            setError(errorData.error);
+            setIsStreaming(false);
+            streamBufRef.current = null;
+          }
           break;
         }
 
@@ -225,7 +262,9 @@ export function useSessionSocket(
         case "history_batch_start": {
           isLoadingHistoryRef.current = true;
           setIsLoadingHistory(true);
-          setMessages([]);
+          // Only clear messages if we don't have any yet (initial load)
+          // Don't clear if we already have messages (e.g., after interrupt + resume)
+          setMessages((prev) => (prev.length === 0 ? [] : prev));
           break;
         }
 
@@ -237,6 +276,13 @@ export function useSessionSocket(
 
         case "todo_update": {
           setTodos(msg.data.todos);
+          break;
+        }
+
+        case "interrupted": {
+          // Session was interrupted but is still alive
+          setIsStreaming(false);
+          streamBufRef.current = null;
           break;
         }
       }
@@ -254,13 +300,37 @@ export function useSessionSocket(
       ws.close();
       wsRef.current = null;
     };
-  }, [sessionId]);
+  }, [sessionId, reconnectTrigger]);
 
-  const sendMessage = useCallback((text: string) => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-    wsRef.current.send(JSON.stringify({ type: "message", message: text }));
-    setIsStreaming(true);
-  }, []);
+  const sendMessage = useCallback(
+    async (text: string) => {
+      // Clear any previous error when sending a new message
+      setError(null);
+
+      // If WebSocket is open, send via WS
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: "message", message: text }));
+        setIsStreaming(true);
+        return;
+      }
+
+      // WebSocket is closed - use HTTP API to reactivate session
+      if (sessionId && cwd) {
+        try {
+          setIsStreaming(true);
+          await sendMessageToSession(sessionId, text, cwd);
+          // Trigger WebSocket reconnection
+          setReconnectTrigger((n) => n + 1);
+        } catch (err) {
+          setError(
+            err instanceof Error ? err.message : "Failed to send message",
+          );
+          setIsStreaming(false);
+        }
+      }
+    },
+    [sessionId, cwd],
+  );
 
   const answerQuestion = useCallback(
     (requestId: string, answers: Record<string, string>) => {
@@ -280,6 +350,7 @@ export function useSessionSocket(
     error,
     pendingQuestion,
     todos,
+    usage,
     sendMessage,
     answerQuestion,
     setMessages,

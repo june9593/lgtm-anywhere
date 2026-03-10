@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from "react";
-import { createSession } from "../api";
+import { createSession, interruptSession } from "../api";
 import { useSessionSocket } from "../hooks/useSessionSocket";
 import { MessageList } from "./MessageList";
 import type { MessageListHandle } from "./MessageList";
@@ -31,7 +31,7 @@ export function ChatArea({
     todos,
     sendMessage,
     answerQuestion,
-  } = useSessionSocket(selectedSessionId);
+  } = useSessionSocket(selectedSessionId, selectedProject?.cwd);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const messageListRef = useRef<MessageListHandle>(null);
@@ -75,6 +75,15 @@ export function ChatArea({
     },
     [sendMessage],
   );
+
+  const handleStop = useCallback(async () => {
+    if (!selectedSessionId) return;
+    try {
+      await interruptSession(selectedSessionId);
+    } catch (err) {
+      console.error("Failed to interrupt session:", err);
+    }
+  }, [selectedSessionId]);
 
   // New session: same layout as active chat, but empty messages + model selector
   if (showNewSession && selectedProject) {
@@ -128,7 +137,9 @@ export function ChatArea({
       )}
       <ChatInput
         onSend={handleSend}
+        onStop={handleStop}
         disabled={isStreaming || isLoadingHistory}
+        isStreaming={isStreaming}
       />
       <TodoPanel todos={todos} />
     </div>

@@ -151,6 +151,23 @@ export function createSessionRoutes(sessionManager: SessionManager): Router {
     }
   });
 
+  // POST /api/sessions/:session_id/interrupt
+  // Interrupt the current operation but keep session alive
+  router.post("/:session_id/interrupt", async (req, res, next) => {
+    try {
+      const sessionId = req.params.session_id as string;
+
+      const interrupted = await sessionManager.interruptSession(sessionId);
+
+      res.json({
+        sessionId,
+        interrupted,
+      });
+    } catch (err) {
+      next(err);
+    }
+  });
+
   // DELETE /api/sessions/:session_id
   router.delete("/:session_id", async (req, res, next) => {
     try {
@@ -163,6 +180,38 @@ export function createSessionRoutes(sessionManager: SessionManager): Router {
         stopped: true,
         fileDeleted: false,
       });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // POST /api/sessions/:session_id/messages?cwd=...
+  // Send a message to an existing session (reactivates if needed)
+  router.post("/:session_id/messages", async (req, res, next) => {
+    try {
+      const sessionId = req.params.session_id as string;
+      const cwd = req.query.cwd as string | undefined;
+      if (!cwd) {
+        res.status(400).json({
+          error: {
+            code: "INVALID_REQUEST",
+            message: "cwd query parameter is required",
+          },
+        });
+        return;
+      }
+
+      const body = req.body as { message: string };
+      if (!body.message) {
+        res.status(400).json({
+          error: { code: "INVALID_REQUEST", message: "message is required" },
+        });
+        return;
+      }
+
+      await sessionManager.sendMessage(sessionId, body.message, cwd);
+
+      res.json({ sessionId });
     } catch (err) {
       next(err);
     }

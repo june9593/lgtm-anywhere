@@ -315,6 +315,38 @@ export class SessionManager extends EventEmitter {
     });
   }
 
+  /**
+   * Interrupt the current operation but keep session alive for further messages.
+   * Uses abortController to cancel the ongoing API request.
+   */
+  async interruptSession(sessionId: string): Promise<boolean> {
+    const session = this.activeSessions.get(sessionId);
+    if (!session) return false;
+
+    // Abort the current operation
+    session.abortController.abort();
+
+    // Create a new AbortController for future operations
+    const newAbortController = new AbortController();
+    session.abortController = newAbortController;
+
+    // Notify clients that the session was interrupted
+    this.broadcast(session, "interrupted", {
+      sessionId,
+      message: "Session interrupted",
+    });
+
+    // Set state to idle
+    session.state = "idle";
+    session.lastActivityAt = Date.now();
+    this.emit("session_state", {
+      sessionId,
+      state: "idle" as SessionState,
+    });
+
+    return true;
+  }
+
   async setModel(sessionId: string, model: string): Promise<void> {
     const session = this.activeSessions.get(sessionId);
     if (session) {
